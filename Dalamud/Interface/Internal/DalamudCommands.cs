@@ -384,7 +384,7 @@ internal class DalamudCommands : IServiceType
         var chatGui = Service<ChatGui>.Get();
         var logPath = Path.Join(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "XIVLauncher",
+            "XIVLauncherKR",
             "dalamud.log");
         var message = Util.CopyFilesToClipboard([logPath])
                           ? Loc.Localize("DalamudLogCopySuccess", "Log file copied to clipboard.")

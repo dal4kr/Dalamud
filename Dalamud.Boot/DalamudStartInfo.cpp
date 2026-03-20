@@ -64,7 +64,9 @@ void from_json(const nlohmann::json& json, DalamudStartInfo::ClientLanguage& val
         else if (langstr == "german")
             value = DalamudStartInfo::ClientLanguage::German;
         else if (langstr == "french")
-            value = DalamudStartInfo::ClientLanguage::French;
+          value = DalamudStartInfo::ClientLanguage::French;
+        else if (langstr == "korean")
+          value = DalamudStartInfo::ClientLanguage::Korean;
     }
 }
 

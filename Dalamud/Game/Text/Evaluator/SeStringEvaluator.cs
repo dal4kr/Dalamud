@@ -213,6 +213,7 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
             "en" => ClientLanguage.English,
             "de" => ClientLanguage.German,
             "fr" => ClientLanguage.French,
+            "ko" => ClientLanguage.Korean,
             _ => this.clientState.ClientLanguage,
         };
     }

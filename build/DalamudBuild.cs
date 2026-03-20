@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using Nuke.Common;
 using Nuke.Common.Execution;
 using Nuke.Common.Git;
@@ -13,6 +15,72 @@ using Serilog;
 [UnsetVisualStudioEnvironmentVariables]
 public class DalamudBuild : NukeBuild
 {
+    static DalamudBuild()
+    {
+        try
+        {
+            // Try to locate MSBuild using vswhere (recommended) and fall back to common paths.
+            var msbuild = GetMSBuildFromVsWhere() ?? GetMSBuildFromCommonPaths();
+            if (!string.IsNullOrEmpty(msbuild) && File.Exists(msbuild))
+                MSBuildTasks.MSBuildPath = msbuild;
+        }
+        catch
+        {
+            // Swallow any exceptions — failing to detect MSBuild should not crash the build script.
+        }
+    }
+
+    private static string GetMSBuildFromVsWhere()
+    {
+        try
+        {
+            var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            var vswhere = Path.Combine(programFilesX86, "Microsoft Visual Studio", "Installer", "vswhere.exe");
+            if (!File.Exists(vswhere))
+                return null;
+
+            var psi = new ProcessStartInfo(vswhere, "-latest -products * -requires Microsoft.Component.MSBuild -property installationPath")
+            {
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var proc = Process.Start(psi);
+            if (proc == null)
+                return null;
+
+            var output = proc.StandardOutput.ReadToEnd().Trim();
+            //proc.WaitForExit(3000);
+            if (string.IsNullOrEmpty(output))
+                return null;
+
+            var candidate = Path.Combine(output, "MSBuild", "Current", "Bin", "MSBuild.exe");
+            return File.Exists(candidate) ? candidate : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string GetMSBuildFromCommonPaths()
+    {
+        var candidates = new[]
+        {
+            @"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe",
+            @"C:\Program Files\Microsoft Visual Studio\18\Professional\MSBuild\Current\Bin\MSBuild.exe",
+            @"C:\Program Files\Microsoft Visual Studio\17\Community\MSBuild\Current\Bin\MSBuild.exe",
+            @"C:\Program Files\Microsoft Visual Studio\17\Professional\MSBuild\Current\Bin\MSBuild.exe",
+            @"C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\MSBuild.exe",
+        };
+
+        foreach (var c in candidates)
+            if (File.Exists(c))
+                return c;
+
+        return null;
+    }
     /// Support plugins are available for:
     ///   - Microsoft VisualStudio     https://nuke.build/visualstudio
     ///   - JetBrains ReSharper        https://nuke.build/resharper
@@ -75,7 +143,7 @@ public class DalamudBuild : NukeBuild
             // Not necessary, and does not build on Linux
             if (IsDocsBuild)
                 return;
-            
+
             MSBuildTasks.MSBuild(s => s
                 .SetTargetPath(CImGuiProjectFile)
                 .SetConfiguration(Configuration)
@@ -88,7 +156,7 @@ public class DalamudBuild : NukeBuild
             // Not necessary, and does not build on Linux
             if (IsDocsBuild)
                 return;
-            
+
             MSBuildTasks.MSBuild(s => s
                 .SetTargetPath(CImPlotProjectFile)
                 .SetConfiguration(Configuration)
@@ -101,7 +169,7 @@ public class DalamudBuild : NukeBuild
             // Not necessary, and does not build on Linux
             if (IsDocsBuild)
                 return;
-            
+
             MSBuildTasks.MSBuild(s => s
                 .SetTargetPath(CImGuizmoProjectFile)
                 .SetConfiguration(Configuration)

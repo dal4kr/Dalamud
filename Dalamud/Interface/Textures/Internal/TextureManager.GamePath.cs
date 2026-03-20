@@ -32,6 +32,7 @@ internal sealed partial class TextureManager
             ClientLanguage.English => "en/",
             ClientLanguage.German => "de/",
             ClientLanguage.French => "fr/",
+            ClientLanguage.Korean => "ko/",
             _ => null,
         };
 

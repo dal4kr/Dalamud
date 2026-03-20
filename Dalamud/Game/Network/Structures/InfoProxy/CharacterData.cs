@@ -160,7 +160,7 @@ public unsafe class CharacterData
         get
         {
             var languages = new List<ClientLanguage>();
-            for (var i = 0; i < 4; i++)
+            for (var i = 0; i < 5; i++)
             {
                 if ((this.LanguageMask & (1 << i)) != 0)
                     languages.Add((ClientLanguage)i);

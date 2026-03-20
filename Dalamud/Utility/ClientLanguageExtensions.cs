@@ -20,6 +20,7 @@ public static class ClientLanguageExtensions
             ClientLanguage.English => Lumina.Data.Language.English,
             ClientLanguage.German => Lumina.Data.Language.German,
             ClientLanguage.French => Lumina.Data.Language.French,
+            ClientLanguage.Korean => Lumina.Data.Language.Korean,
             _ => throw new ArgumentOutOfRangeException(nameof(language)),
         };
     }
@@ -38,6 +39,7 @@ public static class ClientLanguageExtensions
             ClientLanguage.English => "en",
             ClientLanguage.German => "de",
             ClientLanguage.French => "fr",
+            ClientLanguage.Korean => "ko",
             _ => throw new ArgumentOutOfRangeException(nameof(value)),
         };
     }
@@ -56,6 +58,7 @@ public static class ClientLanguageExtensions
             "en" => ClientLanguage.English,
             "de" => ClientLanguage.German,
             "fr" => ClientLanguage.French,
+            "ko" => ClientLanguage.Korean,
             _ => throw new ArgumentOutOfRangeException(nameof(value)),
         };
     }

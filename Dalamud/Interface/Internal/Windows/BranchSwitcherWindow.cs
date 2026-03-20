@@ -92,7 +92,7 @@ public class BranchSwitcherWindow : Window
                 Log.Verbose("Switching to branch {Branch} with key {Key}", newTrackName, newTrackKey);
 
                 var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                var xlPath = Path.Combine(appData, "XIVLauncher", "current", "XIVLauncher.exe");
+                var xlPath = Path.Combine(appData, "XIVLauncherKR", "current", "XIVLauncher.exe");
 
                 if (File.Exists(xlPath))
                 {
