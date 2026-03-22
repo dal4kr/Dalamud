@@ -15,7 +15,7 @@ jobs:
         submodule:
           - name: ClientStructs
             path: lib/FFXIVClientStructs
-            branch: main
+            branch: kr
             branch-prefix: csupdate
           - name: Excel Schema
             path: lib/Lumina.Excel

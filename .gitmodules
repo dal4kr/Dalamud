@@ -22,3 +22,4 @@
 [submodule "lib/FFXIVClientStructs"]
 	path = lib/FFXIVClientStructs
 	url = https://github.com/dal4kr/FFXIVClientStructs.git
+	branch = kr
