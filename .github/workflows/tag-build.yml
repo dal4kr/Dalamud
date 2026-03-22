@@ -2,7 +2,7 @@ name: Tag Build
 on:
   push:
     branches:
-      - master
+      - kr
     tags-ignore:
       - '*' # don't needlessly execute on tags
 
