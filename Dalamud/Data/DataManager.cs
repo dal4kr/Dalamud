@@ -151,13 +151,11 @@ internal sealed class DataManager : IInternalDisposableService, IDataManager
 
     /// <inheritdoc/>
     public ExcelSheet<T> GetExcelSheet<T>(ClientLanguage? language = null, string? name = null) where T : struct, IExcelRow<T>
-        //=> this.Excel.GetSheet<T>(language?.ToLumina(), name);
-        => this.Excel.GetSheet<T>(Lumina.Data.Language.Korean, name);
+        => this.Excel.GetSheet<T>(language?.ToLumina(), name);
 
         /// <inheritdoc/>
     public SubrowExcelSheet<T> GetSubrowExcelSheet<T>(ClientLanguage? language = null, string? name = null) where T : struct, IExcelSubrow<T>
-        //=> this.Excel.GetSubrowSheet<T>(language?.ToLumina(), name);
-        => this.Excel.GetSubrowSheet<T>(Lumina.Data.Language.Korean, name);
+        => this.Excel.GetSubrowSheet<T>(language?.ToLumina(), name);
 
     /// <inheritdoc/>
     public FileResource? GetFile(string path)
