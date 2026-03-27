@@ -1,5 +1,7 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 
 using Dalamud.Game.Command;
 using Dalamud.Hooking;
@@ -10,6 +12,10 @@ using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.Completion;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+
+using Iced.Intel;
+
+using static Iced.Intel.AssemblerRegisters;
 
 namespace Dalamud.Game.Internal;
 
@@ -33,8 +39,15 @@ internal sealed unsafe class DalamudCompletion : IInternalDisposableService
 
     private EntryStrings? dalamudCategory;
 
-    private Hook<AtkTextInput.Delegates.OpenCompletion> openSuggestionsHook;
+    //private Hook<AtkTextInput.Delegates.OpenCompletion> openSuggestionsHook;
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void UpdateCompletionDataDelegate();
+    private UpdateCompletionDataDelegate updateCompletionDataDelegate;
+
+    private AsmHook openSuggestionsHook;
     private Hook<CompletionModule.Delegates.GetSelection>? getSelectionHook;
+
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DalamudCompletion"/> class.
@@ -70,9 +83,31 @@ internal sealed unsafe class DalamudCompletion : IInternalDisposableService
 
         this.dalamudCategory = new EntryStrings("【Dalamud】");
 
-        this.openSuggestionsHook = Hook<AtkTextInput.Delegates.OpenCompletion>.FromAddress(
-            (nint)AtkTextInput.MemberFunctionPointers.OpenCompletion,
-            this.OpenSuggestionsDetour);
+        // KR hack
+        // The KR client does not use AtkTextInput.OpenCompletion
+        // Instead, we directly hook the first assembly point at
+        // `Component::GUI::AtkTextInput.ProcessKeyShortcut` -> case SeVirtualKey.Tab -> After checking `InputSanitizationFlags`
+
+        //this.openSuggestionsHook = Hook<AtkTextInput.Delegates.OpenCompletion>.FromAddress(
+        //    (nint)AtkTextInput.MemberFunctionPointers.OpenCompletion,
+        //    this.OpenSuggestionsDetour);
+
+        var tabShortCutProcessAddress = Service<TargetSigScanner>.Get().ScanText("4C 8D 86 ?? ?? ?? ?? 48 8B CE 48 8D 96 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 4E");
+        this.updateCompletionDataDelegate = this.UpdateCompletionData;
+        var callback = Marshal.GetFunctionPointerForDelegate(this.updateCompletionDataDelegate);
+
+        var asm = new Assembler(64);
+
+        // Register liveness
+        // rsi: used for `this` pointer, must be valid (callee-saved)
+        // all other registers seem to be volatile across the call
+        asm.mov(rax, (ulong)callback);         // mov rax, <callback>         // rax was (`this->InputSanitizationFlags` >> 6)
+        asm.call(rax);                         // call rax
+
+        var bytecodeStream = new MemoryStream();
+        asm.Assemble(new StreamCodeWriter(bytecodeStream), 0);
+
+        this.openSuggestionsHook = new AsmHook(tabShortCutProcessAddress, bytecodeStream.ToArray(), "openSuggestionsHook");
 
         this.getSelectionHook = Hook<CompletionModule.Delegates.GetSelection>.FromAddress(
             (nint)uiModule->CompletionModule.VirtualTable->GetSelection,
@@ -82,11 +117,11 @@ internal sealed unsafe class DalamudCompletion : IInternalDisposableService
         this.getSelectionHook.Enable();
     }
 
-    private void OpenSuggestionsDetour(AtkTextInput* thisPtr)
-    {
-        this.UpdateCompletionData();
-        this.openSuggestionsHook!.Original(thisPtr);
-    }
+    //private void OpenSuggestionsDetour(AtkTextInput* thisPtr)
+    //{
+    //    this.UpdateCompletionData();
+    //    this.openSuggestionsHook!.Original(thisPtr);
+    //}
 
     private int GetSelectionDetour(CompletionModule* thisPtr, CategoryData.CompletionDataStruct* dataStructs, int index, Utf8String* outputString, Utf8String* outputDisplayString)
     {
