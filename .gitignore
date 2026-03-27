@@ -333,3 +333,5 @@ ASALocalRun/
 #imgui/**/Generated/**/*
 
 .nuke/
+.local-nuget/
+pack/
