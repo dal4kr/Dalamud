@@ -51,6 +51,30 @@ public enum GameFontFamilyAndSize
     Axis36,
 
     /// <summary>
+    /// krnaxis (120pt)
+    ///
+    /// Contains Korean characters in addition to Latin characters. Used in game for the whole UI.
+    /// </summary>
+    [GameFontFamilyAndSize("common/font/krnaxis_120.fdt", "common/font/font_krn_{0}.tex", -1)]
+    Krnaxis120,
+
+    /// <summary>
+    /// krnaxis (140pt)
+    ///
+    /// Contains Korean characters in addition to Latin characters. Used in game for the whole UI.
+    /// </summary>
+    [GameFontFamilyAndSize("common/font/krnaxis_140.fdt", "common/font/font_krn_{0}.tex", -1)]
+    Krnaxis140,
+
+    /// <summary>
+    /// krnaxis (180pt)
+    ///
+    /// Contains Korean characters in addition to Latin characters. Used in game for the whole UI.
+    /// </summary>
+    [GameFontFamilyAndSize("common/font/krnaxis_180.fdt", "common/font/font_krn_{0}.tex", -1)]
+    Krnaxis180,
+
+    /// <summary>
     /// Jupiter (16pt)
     ///
     /// Serif font. Contains mostly ASCII range. Used in game for job names.
