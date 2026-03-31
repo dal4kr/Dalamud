@@ -61,6 +61,42 @@ function Get-FileSha256HexFromPath([string] $path) {
     return ([Convert]::ToHexString($hashBytes)).ToLowerInvariant()
 }
 
+function Get-DirectorySnapshotHash([string] $rootPath) {
+    $trackedAndUntrackedRaw = & git -C $rootPath ls-files --cached --others --exclude-standard
+    if ($LASTEXITCODE) {
+        throw "Failed to enumerate lib/Lumina tracked files."
+    }
+
+    $deletedRaw = & git -C $rootPath ls-files --deleted
+    if ($LASTEXITCODE) {
+        throw "Failed to enumerate lib/Lumina deleted files."
+    }
+
+    $trackedAndUntracked = @($trackedAndUntrackedRaw | ForEach-Object { "$_".Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+    $deleted = @($deletedRaw | ForEach-Object { "$_".Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+
+    $entries = New-Object System.Collections.Generic.List[string]
+    foreach ($relativePath in $trackedAndUntracked) {
+        $fullPath = Join-Path $rootPath $relativePath
+        if (-not (Test-Path $fullPath -PathType Leaf)) {
+            continue
+        }
+
+        $contentHash = Get-FileSha256HexFromPath $fullPath
+        $entries.Add("F $relativePath $contentHash")
+    }
+
+    foreach ($relativePath in $deleted) {
+        $entries.Add("D $relativePath")
+    }
+
+    if ($entries.Count -eq 0) {
+        return "empty"
+    }
+
+    return Get-FileSha256Hex (($entries | Sort-Object) -join "`n")
+}
+
 function Get-LuminaVersionMap {
     if (-not (Test-Path $luminaVersionMapPath)) {
         return @{}
@@ -125,20 +161,8 @@ function Get-LuminaVersionKey {
     $head = if ($null -eq $headRaw) { "" } else { [string]$headRaw }
     $head = $head.Trim()
 
-    $statusRaw = & git -C $luminaRoot status --porcelain=v1
-    if ($LASTEXITCODE) {
-        throw "Failed to read lib/Lumina working tree status."
-    }
-    $status = if ($null -eq $statusRaw) { "" } else { [string]$statusRaw }
-    $status = $status.Trim()
-
-    $statusHash = if ([string]::IsNullOrWhiteSpace($status)) {
-        "clean"
-    } else {
-        Get-FileSha256Hex $status
-    }
-
-    return "$head|$statusHash"
+    $snapshotHash = Get-DirectorySnapshotHash $luminaRoot
+    return "$head|$snapshotHash"
 }
 
 function Get-EffectiveLuminaPackageVersion {
