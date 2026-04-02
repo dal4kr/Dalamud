@@ -1,6 +1,7 @@
-﻿Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.1.32319.34
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.4.11620.152 stable
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{CEF7D22B-CB85-400E-BD64-349A30E3C097}"
 	ProjectSection(SolutionItems) = preProject
@@ -85,6 +86,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dalamud.EnumGenerator.Sample", "generators\Dalamud.EnumGenerator\Dalamud.EnumGenerator.Sample\Dalamud.EnumGenerator.Sample.csproj", "{8CDAEB2D-5022-450A-A97F-181C6270185F}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dalamud.EnumGenerator.Tests", "generators\Dalamud.EnumGenerator\Dalamud.EnumGenerator.Tests\Dalamud.EnumGenerator.Tests.csproj", "{F5D92D2D-D36F-4471-B657-8B9AA6C98AD6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumina", "lib\Lumina\src\Lumina\Lumina.csproj", "{70AB494B-A2B1-1F46-B7AD-3F81238EB46E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -196,6 +199,10 @@ Global
 		{F5D92D2D-D36F-4471-B657-8B9AA6C98AD6}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F5D92D2D-D36F-4471-B657-8B9AA6C98AD6}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F5D92D2D-D36F-4471-B657-8B9AA6C98AD6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{70AB494B-A2B1-1F46-B7AD-3F81238EB46E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{70AB494B-A2B1-1F46-B7AD-3F81238EB46E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{70AB494B-A2B1-1F46-B7AD-3F81238EB46E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{70AB494B-A2B1-1F46-B7AD-3F81238EB46E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -223,6 +230,7 @@ Global
 		{27AA9F87-D2AA-41D9-A559-0F1EBA38C5F8} = {50BEC23B-FFFD-427B-A95D-27E1D1958FFF}
 		{8CDAEB2D-5022-450A-A97F-181C6270185F} = {50BEC23B-FFFD-427B-A95D-27E1D1958FFF}
 		{F5D92D2D-D36F-4471-B657-8B9AA6C98AD6} = {50BEC23B-FFFD-427B-A95D-27E1D1958FFF}
+		{70AB494B-A2B1-1F46-B7AD-3F81238EB46E} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {79B65AC9-C940-410E-AB61-7EA7E12C7599}

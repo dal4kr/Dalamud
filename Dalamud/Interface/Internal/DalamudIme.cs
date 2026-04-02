@@ -391,16 +391,32 @@ internal sealed unsafe class DalamudIme : IInternalDisposableService
 
                 case WM.WM_IME_COMPOSITION:
                     if (invalidTarget)
+                    {
                         ImmNotifyIME(hImc, NI.NI_COMPOSITIONSTR, CPS_CANCEL, 0);
+                    }
                     else
-                        this.ReplaceCompositionString(hImc, ((int)args.LParam & GCS.GCS_RESULTSTR) != 0);
+                    {
+                        var lParam = (int)args.LParam;
+                        var hasResult = (lParam & GCS.GCS_RESULTSTR) != 0;
+                        var hasComposition = (lParam & GCS.GCS_COMPSTR) != 0;
+
+                        // Some IMEs, including the legacy Korean IME on Windows 11, can deliver
+                        // both a committed syllable and the next composition state in the same message.
+                        if (hasResult)
+                            this.CommitResultString(hImc);
+
+                        if (hasComposition)
+                            this.UpdateCompositionString(hImc);
+                        else if (hasResult)
+                            this.ClearCompositionState();
+                    }
 
                     this.updateImeStatusAgain = true;
                     args.SuppressWithValue(0);
                     break;
 
                 case WM.WM_IME_ENDCOMPOSITION:
-                    this.ClearState(hImc, false);
+                    this.ClearCompositionDisplayState();
                     this.updateImeStatusAgain = true;
                     args.SuppressWithValue(0);
                     break;
@@ -408,6 +424,9 @@ internal sealed unsafe class DalamudIme : IInternalDisposableService
                 case WM.WM_IME_CHAR:
                 case WM.WM_IME_KEYDOWN:
                 case WM.WM_IME_KEYUP:
+                    this.updateImeStatusAgain = true;
+                    break;
+
                 case WM.WM_IME_CONTROL:
                 case WM.WM_IME_REQUEST:
                     this.updateImeStatusAgain = true;
@@ -439,13 +458,6 @@ internal sealed unsafe class DalamudIme : IInternalDisposableService
                                         or VK.VK_RIGHT
                                         or VK.VK_DOWN
                                         or VK.VK_RETURN:
-                    // If key inputs that usually result in focus change, cancel the input process.
-                    if (!string.IsNullOrEmpty(ImmGetCompositionString(hImc, GCS.GCS_COMPSTR)))
-                    {
-                        this.ClearState(hImc);
-                        args.WParam = VK.VK_PROCESSKEY;
-                    }
-
                     this.UpdateCandidates(hImc);
                     break;
 
@@ -525,38 +537,32 @@ internal sealed unsafe class DalamudIme : IInternalDisposableService
         }
     }
 
-    private void ReplaceCompositionString(HIMC hImc, bool finalCommit)
+    private void CommitResultString(HIMC hImc)
     {
-        var newString = finalCommit
-                            ? ImmGetCompositionString(hImc, GCS.GCS_RESULTSTR)
-                            : ImmGetCompositionString(hImc, GCS.GCS_COMPSTR);
+        var newString = ImmGetCompositionString(hImc, GCS.GCS_RESULTSTR);
 
 #if IMEDEBUG
-        Log.Verbose($"{nameof(this.ReplaceCompositionString)}({newString})");
+        Log.Verbose($"{nameof(this.CommitResultString)}({newString})");
+#endif
+
+        if (string.IsNullOrEmpty(newString))
+            return;
+
+        this.ReflectCharacterEncounters(newString);
+        this.ReplaceCurrentSelection(newString, false);
+        this.ClearCompositionState();
+    }
+
+    private void UpdateCompositionString(HIMC hImc)
+    {
+        var newString = ImmGetCompositionString(hImc, GCS.GCS_COMPSTR);
+
+#if IMEDEBUG
+        Log.Verbose($"{nameof(this.UpdateCompositionString)}({newString})");
 #endif
 
         this.ReflectCharacterEncounters(newString);
-
-        var textState = GetInputTextState();
-        if (this.temporaryUndoSelection is not null)
-        {
-            textState.Undo();
-            textState.SetSelectionTuple(this.temporaryUndoSelection.Value);
-            this.temporaryUndoSelection = null;
-        }
-
-        textState.SanitizeSelectionRange();
-        if (textState.ReplaceSelectionAndPushUndo(newString))
-            this.temporaryUndoSelection = textState.GetSelectionTuple();
-
-        // Put the cursor at the beginning, so that the candidate window appears aligned with the text.
-        textState.SetSelectionRange(textState.GetSelectionTuple().Start, newString.Length, 0);
-
-        if (finalCommit)
-        {
-            this.ClearState(hImc, false);
-            newString = string.Empty;
-        }
+        this.ReplaceCurrentSelection(newString, true);
 
         this.compositionString = newString;
         this.compositionCursorOffset = ImmGetCompositionStringW(hImc, GCS.GCS_CURSORPOS, null, 0);
@@ -589,18 +595,67 @@ internal sealed unsafe class DalamudIme : IInternalDisposableService
         this.UpdateCandidates(hImc);
     }
 
-    private void ClearState(HIMC hImc, bool invokeCancel = true)
+    private void ReplaceCurrentSelection(string newString, bool trackAsTemporaryComposition)
+    {
+        var textState = GetInputTextState();
+        if (this.temporaryUndoSelection is not null)
+        {
+            textState.Undo();
+            textState.SetSelectionTuple(this.temporaryUndoSelection.Value);
+            this.temporaryUndoSelection = null;
+        }
+
+        textState.SanitizeSelectionRange();
+        if (!textState.ReplaceSelectionAndPushUndo(newString))
+            return;
+
+        if (trackAsTemporaryComposition)
+        {
+            this.temporaryUndoSelection = textState.GetSelectionTuple();
+
+            // Put the cursor at the beginning, so that the candidate window appears aligned with the text.
+            textState.SetSelectionRange(textState.GetSelectionTuple().Start, newString.Length, 0);
+        }
+        else
+        {
+            this.temporaryUndoSelection = null;
+            var (start, _, _) = textState.GetSelectionTuple();
+            var committedCursor = start + newString.Length;
+            textState.Stb.SelectStart = committedCursor;
+            textState.Stb.Cursor = committedCursor;
+            textState.Stb.SelectEnd = committedCursor;
+            textState.SanitizeSelectionRange();
+        }
+    }
+
+    private void ClearCompositionState()
     {
         this.compositionString = string.Empty;
-        this.partialConversionFrom = this.partialConversionTo = 0;
+        this.partialConversionFrom = 0;
+        this.partialConversionTo = 0;
         this.compositionCursorOffset = 0;
+        this.temporaryUndoSelection = null;
+        this.candidateStrings.Clear();
+        this.immCandNative = default;
+    }
+
+    private void ClearCompositionDisplayState()
+    {
+        this.compositionString = string.Empty;
+        this.partialConversionFrom = 0;
+        this.partialConversionTo = 0;
+        this.compositionCursorOffset = 0;
+        this.candidateStrings.Clear();
+        this.immCandNative = default;
+    }
+
+    private void ClearState(HIMC hImc, bool invokeCancel = true)
+    {
+        this.ClearCompositionDisplayState();
         this.temporaryUndoSelection = null;
 
         var textState = GetInputTextState();
         textState.Stb.SelectStart = textState.Stb.Cursor = textState.Stb.SelectEnd;
-
-        this.candidateStrings.Clear();
-        this.immCandNative = default;
         if (invokeCancel)
             ImmNotifyIME(hImc, NI.NI_COMPOSITIONSTR, CPS_CANCEL, 0);
 
