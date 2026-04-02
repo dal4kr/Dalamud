@@ -188,7 +188,7 @@ function Get-EffectiveLuminaPackageVersion {
         }
     }
 
-    $timestampSuffix = Get-Date -Format "yyyyMMdd.HHmmss"
+    $timestampSuffix = Get-Date -Format "yyyyMMddHHmmss"
     return [pscustomobject]@{
         VersionKey = $versionKey
         Version = "$LuminaPackageVersion.dev.$timestampSuffix"
