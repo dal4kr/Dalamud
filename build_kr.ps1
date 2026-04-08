@@ -114,6 +114,7 @@ function Get-LuminaVersionMap {
         $map[$property.Name] = @{
             Version = [string]$entry.Version
             PackageSha256 = [string]$entry.PackageSha256
+            SourceVersionKey = [string]$entry.SourceVersionKey
         }
     }
 
@@ -125,13 +126,28 @@ function Save-LuminaVersionMap([hashtable] $map) {
     Set-Content -Path $luminaVersionMapPath -Value $json -Encoding UTF8
 }
 
-function Get-ReusableLocalLuminaPackage([string] $luminaVersionKey, [hashtable] $versionMap) {
-    if (-not $versionMap.ContainsKey($luminaVersionKey)) {
+function Get-ReusableLocalLuminaPackage([string] $mapKey, [string] $expectedSourceVersionKey, [hashtable] $versionMap) {
+    if (-not $versionMap.ContainsKey($mapKey)) {
         return $null
     }
 
-    $entry = $versionMap[$luminaVersionKey]
+    $entry = $versionMap[$mapKey]
     if ($null -eq $entry -or [string]::IsNullOrWhiteSpace($entry.Version) -or [string]::IsNullOrWhiteSpace($entry.PackageSha256)) {
+        return $null
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($expectedSourceVersionKey)) {
+        $entrySourceVersionKey = if ($entry.ContainsKey("SourceVersionKey")) { [string]$entry.SourceVersionKey } else { "" }
+        if ([string]::IsNullOrWhiteSpace($entrySourceVersionKey)) {
+            $entrySourceVersionKey = $mapKey
+        }
+
+        if ($entrySourceVersionKey -ne $expectedSourceVersionKey) {
+            return $null
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($entry.Version) -or [string]::IsNullOrWhiteSpace($entry.PackageSha256)) {
         return $null
     }
 
@@ -165,23 +181,33 @@ function Get-LuminaVersionKey {
     return "$head|$snapshotHash"
 }
 
+function Get-ReleaseLuminaMapKey([string] $luminaPackageVersion) {
+    return "release/$luminaPackageVersion"
+}
+
 function Get-EffectiveLuminaPackageVersion {
+    $sourceVersionKey = Get-LuminaVersionKey
+    $versionMap = Get-LuminaVersionMap
+
     if ($ReleaseLumina) {
+        $mapKey = Get-ReleaseLuminaMapKey -luminaPackageVersion $LuminaPackageVersion
+        $reusablePackage = Get-ReusableLocalLuminaPackage -mapKey $mapKey -expectedSourceVersionKey $sourceVersionKey -versionMap $versionMap
         return [pscustomobject]@{
-            VersionKey = $null
+            VersionKey = $mapKey
+            SourceVersionKey = $sourceVersionKey
             Version = $LuminaPackageVersion
-            ReusablePackage = $null
-            VersionMap = @{}
+            ReusablePackage = $reusablePackage
+            VersionMap = $versionMap
         }
     }
 
-    $versionKey = Get-LuminaVersionKey
-    $versionMap = Get-LuminaVersionMap
-    $reusablePackage = Get-ReusableLocalLuminaPackage -luminaVersionKey $versionKey -versionMap $versionMap
+    $versionKey = $sourceVersionKey
+    $reusablePackage = Get-ReusableLocalLuminaPackage -mapKey $versionKey -expectedSourceVersionKey $sourceVersionKey -versionMap $versionMap
 
     if ($null -ne $reusablePackage) {
         return [pscustomobject]@{
             VersionKey = $versionKey
+            SourceVersionKey = $sourceVersionKey
             Version = $reusablePackage.Version
             ReusablePackage = $reusablePackage
             VersionMap = $versionMap
@@ -191,6 +217,7 @@ function Get-EffectiveLuminaPackageVersion {
     $timestampSuffix = Get-Date -Format "yyyyMMddHHmmss"
     return [pscustomobject]@{
         VersionKey = $versionKey
+        SourceVersionKey = $sourceVersionKey
         Version = "$LuminaPackageVersion.dev.$timestampSuffix"
         ReusablePackage = $null
         VersionMap = $versionMap
@@ -222,6 +249,35 @@ function Set-RootLuminaPackageVersion([string] $luminaPackageVersion) {
     }
 
     Set-Content -Path $rootDirectoryPackagesPropsPath -Value $updatedContent -Encoding UTF8
+}
+
+function Get-NuGetGlobalPackagesPath {
+    $localsOutput = & $env:DOTNET_EXE nuget locals global-packages --list
+    if ($LASTEXITCODE) {
+        throw "Failed to resolve the NuGet global-packages path."
+    }
+
+    foreach ($line in @($localsOutput)) {
+        $text = [string]$line
+        if ($text -match 'global-packages:\s*(.+)$') {
+            return $Matches[1].Trim()
+        }
+    }
+
+    throw "Failed to parse the NuGet global-packages path."
+}
+
+function Remove-LuminaPackageArtifacts([string] $luminaPackageVersion) {
+    $localPackagePath = Join-Path $localNugetDir "Lumina.$luminaPackageVersion.nupkg"
+    if (Test-Path $localPackagePath) {
+        Remove-Item -LiteralPath $localPackagePath -Force
+    }
+
+    $globalPackagesRoot = Get-NuGetGlobalPackagesPath
+    $globalPackageDir = Join-Path $globalPackagesRoot "lumina\$luminaPackageVersion"
+    if (Test-Path $globalPackageDir) {
+        Remove-Item -LiteralPath $globalPackageDir -Recurse -Force
+    }
 }
 
 # If dotnet CLI is installed globally and it matches requested version, use for execution
@@ -267,19 +323,23 @@ if ($null -ne $luminaVersionResolution.ReusablePackage) {
     Write-Host "Reusing local Lumina package: $($luminaVersionResolution.ReusablePackage.PackagePath)"
 } else {
     Write-Host "Building `lib/Lumina` (submodule)..."
+    if ($ReleaseLumina) {
+        Write-Host "Removing stale local Lumina package artifacts for version: $effectiveLuminaPackageVersion"
+        Remove-LuminaPackageArtifacts -luminaPackageVersion $effectiveLuminaPackageVersion
+    }
+
     ExecSafe { & $luminaBuildScriptPath -PackageVersion $effectiveLuminaPackageVersion -Configuration Release }
 
     $luminaPackage = Get-LocalLuminaPackage -luminaPackageVersion $effectiveLuminaPackageVersion
     Write-Host "Pushing local Lumina package: $($luminaPackage.FullName)"
     ExecSafe { & $env:DOTNET_EXE nuget push $luminaPackage.FullName --source $localNugetDir }
 
-    if (-not $ReleaseLumina) {
-        $luminaVersionResolution.VersionMap[$luminaVersionResolution.VersionKey] = @{
-            Version = $effectiveLuminaPackageVersion
-            PackageSha256 = (Get-FileSha256HexFromPath $luminaPackage.FullName)
-        }
-        Save-LuminaVersionMap $luminaVersionResolution.VersionMap
+    $luminaVersionResolution.VersionMap[$luminaVersionResolution.VersionKey] = @{
+        Version = $effectiveLuminaPackageVersion
+        PackageSha256 = (Get-FileSha256HexFromPath $luminaPackage.FullName)
+        SourceVersionKey = $luminaVersionResolution.SourceVersionKey
     }
+    Save-LuminaVersionMap $luminaVersionResolution.VersionMap
 }
 
 Write-Host "Using local Lumina package version for solution: $effectiveLuminaPackageVersion"

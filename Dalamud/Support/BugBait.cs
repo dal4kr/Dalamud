@@ -28,6 +28,8 @@ internal static class BugBait
     /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
     public static async Task SendFeedback(IPluginManifest plugin, bool isTesting, string content, string reporter, bool includeException)
     {
+        throw new System.Exception("KR client cannot send feedback.");
+
         if (content.IsNullOrWhitespace())
             return;
 
