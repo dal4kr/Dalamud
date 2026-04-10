@@ -255,8 +255,8 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
             MacroCode.PcName => this.TryResolvePcName(in context, payload),
             MacroCode.IfPcGender => this.TryResolveIfPcGender(in context, payload),
             MacroCode.IfPcName => this.TryResolveIfPcName(in context, payload),
-            // MacroCode.Josa
-            // MacroCode.Josaro
+            MacroCode.Josa => this.TryResolveJosa(in context, payload),
+            MacroCode.Josaro => this.TryResolveJosaro(in context, payload),
             MacroCode.IfSelf => this.TryResolveIfSelf(in context, payload),
             // MacroCode.NewLine (pass through)
             // MacroCode.Wait (pass through)
@@ -501,6 +501,40 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
                    name.Equals(characterInfo.Name.AsSpan())
                        ? eTrue
                        : eFalse);
+    }
+
+    private unsafe bool TryResolveJosa(in SeStringContext context, in ReadOnlySePayloadSpan payload)
+    {
+        if (!payload.TryGetExpression(out var value, out var eTrue, out var eFalse))
+            return false;
+
+        if (!value.TryGetString(out var seString))
+            return false;
+
+        var str = this.Evaluate(seString, context.LocalParameters, context.Language).ExtractText();
+        if (str == null || str.Length == 0) return false;
+        char lastChar = str[^1];
+        // cond is true when last character does not have jongseong
+        var cond = (lastChar >= 0xAC00) && (lastChar <= 0xD7A3) && ((lastChar - 0xAC00) % 28 != 0);
+        context.Builder.Append(cond ? eTrue.ToString() : eFalse.ToString());
+        return true;
+    }
+
+    private unsafe bool TryResolveJosaro(in SeStringContext context, in ReadOnlySePayloadSpan payload)
+    {
+        if (!payload.TryGetExpression(out var value, out var eTrue, out var eFalse))
+            return false;
+
+        if (!value.TryGetString(out var seString))
+            return false;
+
+        var str = this.Evaluate(seString, context.LocalParameters, context.Language).ExtractText();
+        if (str == null || str.Length == 0) return false;
+        char lastChar = str[^1];
+        // cond is true when last character does not have jongseong or has jongseong 'ㄹ'
+        var cond = !((lastChar >= 0xAC00) && (lastChar <= 0xD7A3) && ((lastChar - 0xAC00) % 28 != 0) && ((lastChar - 0xAC00) % 28 != 8));
+        context.Builder.Append(cond ? eTrue.ToString() : eFalse.ToString());
+        return true;
     }
 
     private unsafe bool TryResolveIfSelf(in SeStringContext context, in ReadOnlySePayloadSpan payload)
