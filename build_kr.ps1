@@ -25,6 +25,7 @@ $luminaPackageOutputDir = Join-Path $repoRoot "lib\Lumina\src\Lumina\bin\Release
 $localNugetDir = Join-Path $repoRoot ".local-nuget"
 $rootDirectoryPackagesPropsPath = Join-Path $repoRoot "Directory.Packages.props"
 $luminaVersionMapPath = Join-Path $localNugetDir "lumina-version-map.json"
+$luminaVersionMapSchemaVersion = 1
 $TempDirectory = "$repoRoot\\.nuke\temp"
 
 $DotNetGlobalFile = "$repoRoot\\global.json"
@@ -107,11 +108,31 @@ function Get-LuminaVersionMap {
         return @{}
     }
 
-    $map = @{}
     $json = $raw | ConvertFrom-Json
-    foreach ($property in $json.PSObject.Properties) {
-        $entry = $property.Value
-        $map[$property.Name] = @{
+
+    if ($null -eq $json -or
+        -not $json.PSObject.Properties["SchemaVersion"] -or
+        [int]$json.SchemaVersion -ne $luminaVersionMapSchemaVersion -or
+        -not $json.PSObject.Properties["Entries"]) {
+        return @{}
+    }
+
+    $map = @{}
+    foreach ($entry in @($json.Entries)) {
+        if ($null -eq $entry -or
+            -not $entry.PSObject.Properties["Key"] -or
+            -not $entry.PSObject.Properties["Version"] -or
+            -not $entry.PSObject.Properties["PackageSha256"] -or
+            -not $entry.PSObject.Properties["SourceVersionKey"]) {
+            continue
+        }
+
+        $key = [string]$entry.Key
+        if ([string]::IsNullOrWhiteSpace($key)) {
+            continue
+        }
+
+        $map[$key] = @{
             Version = [string]$entry.Version
             PackageSha256 = [string]$entry.PackageSha256
             SourceVersionKey = [string]$entry.SourceVersionKey
@@ -122,7 +143,26 @@ function Get-LuminaVersionMap {
 }
 
 function Save-LuminaVersionMap([hashtable] $map) {
-    $json = $map | ConvertTo-Json
+    $entries = @(
+        foreach ($key in ($map.Keys | Sort-Object)) {
+            $entry = $map[$key]
+            if ($null -eq $entry) {
+                continue
+            }
+
+            [pscustomobject]@{
+                Key = [string]$key
+                Version = [string]$entry.Version
+                PackageSha256 = [string]$entry.PackageSha256
+                SourceVersionKey = [string]$entry.SourceVersionKey
+            }
+        }
+    )
+
+    $json = [pscustomobject]@{
+        SchemaVersion = $luminaVersionMapSchemaVersion
+        Entries = $entries
+    } | ConvertTo-Json -Depth 4
     Set-Content -Path $luminaVersionMapPath -Value $json -Encoding UTF8
 }
 
