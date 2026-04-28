@@ -514,8 +514,8 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
         var str = this.Evaluate(seString, context.LocalParameters, context.Language).ExtractText();
         if (str == null || str.Length == 0) return false;
         char lastChar = str[^1];
-        // cond is true when last character does not have jongseong
-        var cond = (lastChar >= 0xAC00) && (lastChar <= 0xD7A3) && ((lastChar - 0xAC00) % 28 != 0);
+        // cond is true when last character DOES have jongseong
+        var cond = !((lastChar >= 0xAC00) && (lastChar <= 0xD7A3) && ((lastChar - 0xAC00) % 28 != 0));
         context.Builder.Append(cond ? eTrue.ToString() : eFalse.ToString());
         return true;
     }
