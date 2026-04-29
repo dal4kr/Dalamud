@@ -500,15 +500,6 @@ internal partial class InterfaceManager : IInternalDisposableService
         return ((long)vmi.CurrentUsage, (long)vmi.CurrentReservation);
     }
 
-    /// <summary>
-    /// Clear font, style, and color stack. Dangerous, only use when you know
-    /// no one else has something pushed they may try to pop.
-    /// </summary>
-    public void ClearStacks()
-    {
-        ImGuiHelpers.ClearStacksOnContext();
-    }
-
     private void TryQueueFontRebuildBeforeNextRender()
     {
         if (Volatile.Read(ref this.pendingFontRebuildRequests) == 0)

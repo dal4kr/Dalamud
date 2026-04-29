@@ -21,8 +21,7 @@
 	url = https://github.com/NotAdam/Lumina.Excel.git
 [submodule "lib/FFXIVClientStructs"]
 	path = lib/FFXIVClientStructs
-	url = https://github.com/dal4kr/FFXIVClientStructs.git
-	branch = kr
+	url = https://github.com/aers/FFXIVClientStructs.git
 [submodule "lib/Lumina"]
 	path = lib/Lumina
 	url = https://github.com/dal4kr/Lumina
