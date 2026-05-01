@@ -111,8 +111,6 @@ internal partial class InterfaceManager : IInternalDisposableService
     private Hook<ResizeBuffersDelegate>? dxgiSwapChainResizeBuffersHook;
     private ObjectVTableHook<IDXGISwapChain4.Vtbl<IDXGISwapChain4>>? dxgiSwapChainHook;
     private ReShadeAddonInterface? reShadeAddonInterface;
-    private int pendingFontRebuildRequests;
-    private int queuedFontRebuildRequests;
 
     private IFontAtlas? dalamudAtlas;
     private ILockedImFont? defaultFontResourceLock;
@@ -363,8 +361,7 @@ internal partial class InterfaceManager : IInternalDisposableService
     public void RebuildFonts()
     {
         Log.Verbose("[FONT] RebuildFonts() called");
-        Interlocked.Exchange(ref this.pendingFontRebuildRequests, 1);
-        this.TryQueueFontRebuildBeforeNextRender();
+        this.dalamudAtlas?.BuildFontsAsync();
     }
 
     /// <summary>
@@ -500,42 +497,6 @@ internal partial class InterfaceManager : IInternalDisposableService
         return ((long)vmi.CurrentUsage, (long)vmi.CurrentReservation);
     }
 
-    private void TryQueueFontRebuildBeforeNextRender()
-    {
-        if (Volatile.Read(ref this.pendingFontRebuildRequests) == 0)
-            return;
-
-        if (Interlocked.Exchange(ref this.queuedFontRebuildRequests, 1) != 0)
-            return;
-
-        this.runBeforeImGuiRender.Enqueue(() =>
-        {
-            Interlocked.Exchange(ref this.queuedFontRebuildRequests, 0);
-
-            if (Volatile.Read(ref this.pendingFontRebuildRequests) == 0)
-                return;
-
-            var atlas = this.dalamudAtlas;
-            if (atlas is null)
-                return;
-
-            if (!atlas.BuildTask.IsCompleted)
-                return;
-
-            Interlocked.Exchange(ref this.pendingFontRebuildRequests, 0);
-
-            try
-            {
-                atlas.BuildFontsImmediately();
-            }
-            catch (InvalidOperationException ex) when (!atlas.BuildTask.IsCompleted)
-            {
-                Log.Verbose(ex, "[FONT] Main atlas rebuild is already in progress; deferring");
-                Interlocked.Exchange(ref this.pendingFontRebuildRequests, 1);
-            }
-        });
-    }
-
     /// <summary>
     /// Applies immersive dark mode to the game window based on the current system theme setting.
     /// </summary>
@@ -661,8 +622,6 @@ internal partial class InterfaceManager : IInternalDisposableService
     {
         this.CumulativePresentCalls++;
         this.IsMainThreadInPresent = true;
-
-        this.TryQueueFontRebuildBeforeNextRender();
 
         while (this.runBeforeImGuiRender.TryDequeue(out var action))
             action.InvokeSafely();

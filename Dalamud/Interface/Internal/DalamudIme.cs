@@ -104,8 +104,6 @@ internal sealed unsafe class DalamudIme : IInternalDisposableService
     private (int Start, int End, int Cursor)? temporaryUndoSelection;
 
     private bool hadWantTextInput;
-    private bool pendingFontRebuild;
-    private bool fontRebuildQueued;
     private bool updateInputLanguage = true;
     private bool updateImeStatusAgain;
 
@@ -164,10 +162,6 @@ internal sealed unsafe class DalamudIme : IInternalDisposableService
     private bool ShowPartialConversion => this.partialConversionFrom != 0 ||
                                           this.partialConversionTo != this.compositionString.Length;
 
-    /// <summary>Gets a value indicating whether IME composition or candidate selection is active.</summary>
-    private bool IsImeInteractionActive =>
-        this.compositionString.Length != 0 || this.candidateStrings.Count != 0 || this.temporaryUndoSelection is not null;
-
     /// <summary>Gets a value indicating whether to draw.</summary>
     private bool ShouldDraw =>
         this.candidateStrings.Count != 0 || this.ShowPartialConversion || this.inputModeIcon != default;
@@ -197,7 +191,7 @@ internal sealed unsafe class DalamudIme : IInternalDisposableService
                                                  .FindGlyph(chr) is null)
                     {
                         this.EncounteredHan = true;
-                        this.pendingFontRebuild = true;
+                        Service<InterfaceManager>.Get().RebuildFonts();
                     }
                 }
             }
@@ -207,12 +201,10 @@ internal sealed unsafe class DalamudIme : IInternalDisposableService
                 if (HangulRange.Any(x => x.FirstCodePoint <= chr && chr < x.FirstCodePoint + x.Length))
                 {
                     this.EncounteredHangul = true;
-                    this.pendingFontRebuild = true;
+                    Service<InterfaceManager>.Get().RebuildFonts();
                 }
             }
         }
-
-        this.TryQueueDeferredFontRebuild();
     }
 
     private static ImGuiInputTextStatePtr GetInputTextState() => new(&ImGui.GetCurrentContext().Handle->InputTextState);
@@ -645,7 +637,6 @@ internal sealed unsafe class DalamudIme : IInternalDisposableService
         this.temporaryUndoSelection = null;
         this.candidateStrings.Clear();
         this.immCandNative = default;
-        this.TryQueueDeferredFontRebuild();
     }
 
     private void ClearCompositionDisplayState()
@@ -656,7 +647,6 @@ internal sealed unsafe class DalamudIme : IInternalDisposableService
         this.compositionCursorOffset = 0;
         this.candidateStrings.Clear();
         this.immCandNative = default;
-        this.TryQueueDeferredFontRebuild();
     }
 
     private void ClearState(HIMC hImc, bool invokeCancel = true)
@@ -713,8 +703,6 @@ internal sealed unsafe class DalamudIme : IInternalDisposableService
 
     private void Draw()
     {
-        this.TryQueueDeferredFontRebuild();
-
         if (!this.ShouldDraw)
             return;
 
@@ -972,28 +960,6 @@ internal sealed unsafe class DalamudIme : IInternalDisposableService
                     ImGui.GetColorU32(ImGuiCol.Text));
             }
         }
-    }
-
-    private void TryQueueDeferredFontRebuild()
-    {
-        if (!this.pendingFontRebuild || this.fontRebuildQueued || this.IsImeInteractionActive)
-            return;
-
-        this.fontRebuildQueued = true;
-        _ = this.interfaceManager.RunAfterImGuiRender(() =>
-        {
-            this.fontRebuildQueued = false;
-
-            // IME interaction may have restarted before the deferred action ran.
-            if (!this.pendingFontRebuild || this.IsImeInteractionActive)
-                return;
-
-            this.pendingFontRebuild = false;
-            this.interfaceManager.RebuildFonts();
-
-            // If another request came in while the rebuild was being scheduled, queue it again later.
-            this.TryQueueDeferredFontRebuild();
-        });
     }
 
 #if IMEDEBUG
