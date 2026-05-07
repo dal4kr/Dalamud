@@ -506,6 +506,15 @@ internal class PluginInstallerWindow : Window, IDisposable
         }
     }
 
+    private static bool ShouldRenderAsTestingExclusive(RemotePluginManifest? manifest)
+    {
+        if (manifest == null)
+            return false;
+
+        return manifest.IsTestingExclusive || (manifest.TestingDalamudApiLevel == PluginManager.DalamudApiLevel &&
+                                               manifest.TestingDalamudApiLevel != manifest.DalamudApiLevel);
+    }
+
     private void SetOpenPage(PluginInstallerOpenKind kind)
     {
         switch (kind)
@@ -814,8 +823,7 @@ internal class PluginInstallerWindow : Window, IDisposable
         }
 
         // If any dev plugin locations exist, allow a shortcut for the /xldev menu item
-        var hasDevPluginLocations = configuration.DevPluginLoadLocations.Count > 0;
-        if (hasDevPluginLocations)
+        if (configuration.DevMode == true)
         {
             ImGui.SameLine();
             if (ImGui.Button(Locs.FooterButton_ScanDevPlugins))
@@ -1320,8 +1328,8 @@ internal class PluginInstallerWindow : Window, IDisposable
         {
             var plugin = this.pluginListInstalled
                              .FirstOrDefault(plugin => plugin.Manifest.InternalName == availableManifest.InternalName &&
-                                                       plugin.Manifest.RepoUrl == availableManifest.RepoUrl &&
-                                                       !plugin.IsDev);
+                                        (!availableManifest.SourceRepo.IsThirdParty || plugin.Manifest.InstalledFromUrl == availableManifest.SourceRepo.PluginMasterUrl) &&
+                                        !plugin.IsDev);
 
             // We "consumed" this plugin from the pile and remove it.
             if (plugin != null)
@@ -2512,7 +2520,7 @@ internal class PluginInstallerWindow : Window, IDisposable
         {
             label += Locs.PluginTitleMod_TestingVersion;
         }
-        else if (manifest.IsTestingExclusive)
+        else if (ShouldRenderAsTestingExclusive(manifest))
         {
             label += Locs.PluginTitleMod_TestingExclusive;
         }
@@ -2709,7 +2717,11 @@ internal class PluginInstallerWindow : Window, IDisposable
         }
 
         // Testing
-        if (plugin.IsTesting)
+        if (ShouldRenderAsTestingExclusive(remoteManifest))
+        {
+            label += Locs.PluginTitleMod_TestingExclusive;
+        }
+        else if (plugin.IsTesting)
         {
             label += Locs.PluginTitleMod_TestingVersion;
         }
@@ -3105,7 +3117,7 @@ internal class PluginInstallerWindow : Window, IDisposable
         var disabled = this.updateStatus == OperationStatus.InProgress || this.installStatus == OperationStatus.InProgress;
 
         // Disable everything if the plugin is outdated
-        disabled = disabled || (plugin.IsOutdated && !pluginManager.LoadAllApiLevels && !plugin.IsDev) || plugin.IsBanned;
+        disabled = disabled || (plugin.IsOutdated && !plugin.IsDev) || plugin.IsBanned;
 
         // Disable everything if the plugin is orphaned
         // Control will immediately be disabled once the plugin is disabled
