@@ -36,6 +36,9 @@ public static partial class ImRaii
 
         private FontDisposable InternalPush(ImFontPtr font)
         {
+            if (font.IsNull || !font.IsLoaded())
+                return this;
+
             if (FontPushCounter++ == 0)
                 DefaultPushed = ImGui.GetFont();
 

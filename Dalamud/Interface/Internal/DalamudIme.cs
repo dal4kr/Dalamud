@@ -201,7 +201,8 @@ internal sealed unsafe class DalamudIme : IInternalDisposableService
                 if (HangulRange.Any(x => x.FirstCodePoint <= chr && chr < x.FirstCodePoint + x.Length))
                 {
                     this.EncounteredHangul = true;
-                    Service<InterfaceManager>.Get().RebuildFonts();
+                    if (this.dalamudConfiguration.EffectiveLanguage != "ko")
+                        Service<InterfaceManager>.Get().RebuildFonts();
                 }
             }
         }
