@@ -9,6 +9,7 @@ using Dalamud.Game.ClientState.Keys;
 using Dalamud.Interface.Colors;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Internal;
+using Dalamud.Interface.Internal.DesignSystem;
 using Dalamud.Interface.Internal.Windows.StyleEditor;
 using Dalamud.Interface.Textures.Internal;
 using Dalamud.Interface.Textures.TextureWraps;
@@ -30,11 +31,10 @@ namespace Dalamud.Interface.Windowing;
 public class WindowHost
 {
     private const float FadeInOutTime = 0.072f;
+    private const float FocusFadeTime = 0.062f;
     private const float BlurNoiseOpacity = 0.17f;
     private const float MaxBlurStrength = 14f;
     private const string AdditionsPopupName = "WindowSystemContextActions";
-
-    private static readonly Vector4 BlurTintMultiplier = new(158 / 255f, 158 / 255f, 158 / 255f, 25 / 255f);
 
     private static readonly ModuleLog Log = ModuleLog.Create<WindowSystem>();
 
@@ -62,6 +62,8 @@ public class WindowHost
 
     private bool hasError = false;
     private Exception? lastError;
+
+    private float focusTransitionProgress = 0f;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WindowHost"/> class.
@@ -223,11 +225,34 @@ public class WindowHost
             ImGuiHelpers.ForceNextWindowMainViewport();
 
         var wasFocused = this.Window.IsFocused;
-        if (wasFocused && this.Window is not StyleEditorWindow)
+
+        // Smoothly fade title and tint colors bar when switching between active/inactive
+        if (internalDrawParams.Flags.HasFlag(WindowDrawFlags.IsReducedMotion))
+        {
+            this.focusTransitionProgress = wasFocused ? 1f : 0f;
+        }
+        else
+        {
+            var focusFadeStep = ImGui.GetIO().DeltaTime / FocusFadeTime;
+            this.focusTransitionProgress = Math.Clamp(
+                this.focusTransitionProgress + (wasFocused ? focusFadeStep : -focusFadeStep),
+                0f,
+                1f);
+        }
+
+        var t = this.focusTransitionProgress;
+        var easedFocusProgress = 1f - (1f - t) * (1f - t) * (1f - t);
+
+        if (this.Window is not StyleEditorWindow)
         {
             var style = ImGui.GetStyle();
-            var focusedHeaderColor = style.Colors[(int)ImGuiCol.TitleBgActive];
-            ImGui.PushStyleColor(ImGuiCol.TitleBgCollapsed, focusedHeaderColor);
+            var lerpedTitleBgColor = Vector4.Lerp(
+                style.Colors[(int)ImGuiCol.TitleBg],
+                style.Colors[(int)ImGuiCol.TitleBgActive],
+                easedFocusProgress);
+            ImGui.PushStyleColor(ImGuiCol.TitleBg, lerpedTitleBgColor);
+            ImGui.PushStyleColor(ImGuiCol.TitleBgActive, lerpedTitleBgColor);
+            ImGui.PushStyleColor(ImGuiCol.TitleBgCollapsed, lerpedTitleBgColor);
         }
 
         if (this.Window.RequestFocus)
@@ -285,7 +310,6 @@ public class WindowHost
                                  ImGui.GetWindowViewport().ID == ImGui.GetMainViewport().ID &&
                                  windowHasBackground;
 
-                // TODO: Fade between active/inactive tint?
                 if (shouldBlur)
                 {
                     var wPos = ImGui.GetWindowPos();
@@ -293,10 +317,11 @@ public class WindowHost
                         ImGui.GetWindowDrawList(),
                         wPos,
                         wPos + ImGui.GetWindowSize(),
-                        effectiveBlurFactor * MaxBlurStrength,
+                        float.Lerp(0.005f, effectiveBlurFactor, this.internalAlpha ?? 1f) * MaxBlurStrength,
                         ImGui.GetStyle().WindowRounding,
-                        tintColor: ImGui.GetStyle().Colors[ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows) ? (int)ImGuiCol.TitleBgActive : (int)ImGuiCol.TitleBg] * BlurTintMultiplier,
-                        noiseOpacity: BlurNoiseOpacity * effectiveWindowBgAlpha);
+                        tintColor: Vector4.Lerp(internalDrawParams.DefaultBackgroundBlurTint, internalDrawParams.DefaultBackgroundBlurTintActive, easedFocusProgress),
+                        noiseOpacity: float.Lerp(0.09f, 1f, effectiveWindowBgAlpha * this.internalAlpha ?? 1f) * BlurNoiseOpacity,
+                        luminosityColor: internalDrawParams.DefaultBackgroundBlurLuminosity);
                 }
             }
 
@@ -432,6 +457,10 @@ public class WindowHost
                                       100f, "%.1f%%"))
                 {
                     this.internalAlpha = Math.Clamp(alpha / 100f, 0.2f, 1f);
+                }
+
+                if (ImGui.IsItemDeactivatedAfterEdit())
+                {
                     this.presetDirty = true;
                 }
 
@@ -445,6 +474,10 @@ public class WindowHost
                         if (ImGui.Button(Loc.Localize("WindowSystemContextActionReset", "Reset") + "##resetBlur"))
                         {
                             this.internalBlurFactorOverride = null;
+                        }
+
+                        if (ImGui.IsItemDeactivatedAfterEdit())
+                        {
                             this.presetDirty = true;
                         }
                     }
@@ -494,9 +527,9 @@ public class WindowHost
             this.DrawTitleBarButtons();
         }
 
-        if (wasFocused && this.Window is not StyleEditorWindow)
+        if (this.Window is not StyleEditorWindow)
         {
-            ImGui.PopStyleColor();
+            ImGui.PopStyleColor(3);
         }
 
         this.Window.IsFocused = ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows);
@@ -811,47 +844,22 @@ public class WindowHost
     private void DrawErrorMessage()
     {
         // TODO: Once window systems are services, offer to reload the plugin
-        ImGui.TextColoredWrapped(ImGuiColors.ErrorForeground, Loc.Localize("WindowSystemErrorOccurred", "An error occurred while rendering this window. Please contact the developer for details."));
-
-        ImGuiHelpers.ScaledDummy(5);
-
-        if (ImGui.Button(Loc.Localize("WindowSystemErrorRecoverButton", "Attempt to retry")))
-        {
-            this.hasError = false;
-            this.lastError = null;
-        }
-
-        ImGui.SameLine();
-
-        if (ImGui.Button(Loc.Localize("WindowSystemErrorClose", "Close Window")))
-        {
-            this.Window.IsOpen = false;
-            this.hasError = false;
-            this.lastError = null;
-        }
-
-        ImGuiHelpers.ScaledDummy(10);
-
-        if (this.lastError != null)
-        {
-            using var child = ImRaii.Child("##ErrorDetails", new Vector2(0, 200 * ImGuiHelpers.GlobalScale), true);
-            using (ImRaii.PushColor(ImGuiCol.Text, ImGuiColors.DalamudGrey))
-            {
-                ImGui.TextWrapped(Loc.Localize("WindowSystemErrorDetails", "Error Details:"));
-                ImGui.Separator();
-                ImGui.TextWrapped(this.lastError.ToString());
-            }
-
-            var childWindowSize = ImGui.GetWindowSize();
-            var copyText = Loc.Localize("WindowSystemErrorCopy", "Copy");
-            var buttonWidth = ImGuiComponents.GetIconButtonWithTextWidth(FontAwesomeIcon.Copy, copyText);
-            ImGui.SetCursorPos(new Vector2(childWindowSize.X - buttonWidth - ImGui.GetStyle().FramePadding.X,
-                                           ImGui.GetStyle().FramePadding.Y));
-            if (ImGuiComponents.IconButtonWithText(FontAwesomeIcon.Copy, copyText))
-            {
-                ImGui.SetClipboardText(this.lastError.ToString());
-            }
-        }
+        DalamudComponents.DrawErrorDisplay(
+            Loc.Localize("WindowSystemErrorOccurred", "An error occurred while rendering this window. Please contact the developer for details."),
+            this.lastError,
+            [
+                (Loc.Localize("WindowSystemErrorRecoverButton", "Attempt to retry"), () =>
+                    {
+                        this.hasError = false;
+                        this.lastError = null;
+                    }),
+                (Loc.Localize("WindowSystemErrorClose", "Close Window"), () =>
+                {
+                    this.Window.IsOpen = false;
+                    this.hasError = false;
+                    this.lastError = null;
+                })
+            ]);
     }
 
     /// <summary>
@@ -865,8 +873,23 @@ public class WindowHost
         public WindowDrawFlags Flags { get; init; }
 
         /// <summary>
-        /// Gets the sigma value to be used for background blur, if enabled..
+        /// Gets the strength value to be used for background blur, if enabled.
         /// </summary>
         public float DefaultBackgroundBlurStrength { get; init; }
+
+        /// <summary>
+        /// Gets the tint value to be used for background blur in inactive windows, if enabled.
+        /// </summary>
+        public Vector4 DefaultBackgroundBlurTint { get; init; }
+
+        /// <summary>
+        /// Gets the tint value to be used for background blur in active windows, if enabled.
+        /// </summary>
+        public Vector4 DefaultBackgroundBlurTintActive { get; init; }
+
+        /// <summary>
+        /// Gets the luminosity adjust value to be used for background blur, if enabled.
+        /// </summary>
+        public Vector4 DefaultBackgroundBlurLuminosity { get; init; }
     }
 }

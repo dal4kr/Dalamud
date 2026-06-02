@@ -1,7 +1,10 @@
 #include "pch.h"
+#include <format>
 
 #include <d3d11.h>
+#include <dxgi.h>
 #include <dxgi1_3.h>
+#pragma comment(lib, "dxgi.lib")
 
 #include "DalamudStartInfo.h"
 #include "hooks.h"
@@ -128,6 +131,108 @@ static void CheckMsvcrtVersion() {
     }
 }
 
+//TODO: write shit
+
+void get_cpu_info(wchar_t* vendor, wchar_t* brand)
+{
+    // Gotten and reformatted to not include all data as listed at https://learn.microsoft.com/en-us/cpp/intrinsics/cpuid-cpuidex?view=msvc-170#example
+
+    // int cpuInfo[4] = {-1};
+    std::array<int, 4> cpui;
+    int nIds_;
+    int nExIds_;
+    std::vector<std::array<int, 4>> data_;
+    std::vector<std::array<int, 4>> extdata_;
+    size_t convertedChars = 0;
+
+    // Calling __cpuid with 0x0 as the function_id argument
+    // gets the number of the highest valid function ID.
+    __cpuid(cpui.data(), 0);
+    nIds_ = cpui[0];
+
+    for (int i = 0; i <= nIds_; ++i)
+    {
+        __cpuidex(cpui.data(), i, 0);
+        data_.push_back(cpui);
+    }
+
+    // Capture vendor string
+    char vendorA[0x20];
+    memset(vendorA, 0, sizeof(vendorA));
+    *reinterpret_cast<int*>(vendorA) = data_[0][1];
+    *reinterpret_cast<int*>(vendorA + 4) = data_[0][3];
+    *reinterpret_cast<int*>(vendorA + 8) = data_[0][2];
+    mbstowcs_s(&convertedChars, vendor, 0x20, vendorA, _TRUNCATE);
+
+    // Calling __cpuid with 0x80000000 as the function_id argument
+    // gets the number of the highest valid extended ID.
+    __cpuid(cpui.data(), 0x80000000);
+    nExIds_ = cpui[0];
+
+    for (int i = 0x80000000; i <= nExIds_; ++i)
+    {
+        __cpuidex(cpui.data(), i, 0);
+        extdata_.push_back(cpui);
+    }
+
+    // Interpret CPU brand string if reported
+    if (nExIds_ >= 0x80000004)
+    {
+        char brandA[0x40];
+        memset(brandA, 0, sizeof(brandA));
+        memcpy(brandA, extdata_[2].data(), sizeof(cpui));
+        memcpy(brandA + 16, extdata_[3].data(), sizeof(cpui));
+        memcpy(brandA + 32, extdata_[4].data(), sizeof(cpui));
+        mbstowcs_s(&convertedChars, brand, 0x40, brandA, _TRUNCATE);
+    }
+}
+
+std::vector<IDXGIAdapter1*> enum_dxgi_adapters()
+{
+    std::vector<IDXGIAdapter1*> vAdapters;
+
+    IDXGIFactory1* pFactory = NULL;
+    if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void**)&pFactory)))
+    {
+        return vAdapters;
+    }
+
+    IDXGIAdapter1* pAdapter;
+    for (UINT i = 0;
+        pFactory->EnumAdapters1(i, &pAdapter) != DXGI_ERROR_NOT_FOUND;
+        ++i)
+    {
+        vAdapters.push_back(pAdapter);
+    }
+
+    if (pFactory)
+    {
+        pFactory->Release();
+    }
+
+    return vAdapters;
+}
+
+
+static void PrintCpuGpuInfo() {
+
+    wchar_t vendor[0x20];
+    wchar_t brand[0x40];
+    get_cpu_info(vendor, brand);
+
+
+    logging::I(std::format(L"CPU Vendor: {}", vendor));
+    logging::I(std::format(L"CPU Brand: {}", brand));
+
+    for (IDXGIAdapter1* adapter : enum_dxgi_adapters()) {
+        DXGI_ADAPTER_DESC1 adapterDescription{};
+        adapter->GetDesc1(&adapterDescription);
+
+        logging::I(std::format(L"GPU Desc: {}", adapterDescription.Description));
+    }
+
+}
+
 HRESULT WINAPI InitializeImpl(LPVOID lpParam, HANDLE hMainThreadContinue) {
     g_startInfo.from_envvars();
 
@@ -141,24 +246,26 @@ HRESULT WINAPI InitializeImpl(LPVOID lpParam, HANDLE hMainThreadContinue) {
     if (g_startInfo.BootShowConsole)
         ConsoleSetup(utils::get_string_resource(IDS_APPNAME).c_str());
 
+    logging::set_tag("BOOT");
     logging::update_dll_load_status(true);
 
-    const auto logFilePath = unicode::convert<std::wstring>(g_startInfo.BootLogPath);
+    std::wstring resolvedLogPath = unicode::convert<std::wstring>(g_startInfo.BootLogPath);
 
     auto attemptFallbackLog = false;
-    if (logFilePath.empty()) {
+    if (resolvedLogPath.empty()) {
         attemptFallbackLog = true;
 
         logging::I("No log file path given; not logging to file.");
     } else {
         try {
-            logging::start_file_logging(logFilePath, !g_startInfo.BootShowConsole);
-            logging::I("Logging to file: {}", logFilePath);
+            logging::start_file_logging(resolvedLogPath, !g_startInfo.BootShowConsole);
+            logging::I("Logging to file: {}", resolvedLogPath);
 
         } catch (const std::exception& e) {
             attemptFallbackLog = true;
+            resolvedLogPath.clear();
 
-            logging::E("Couldn't open log file: {}", logFilePath);
+            logging::E("Couldn't open log file: {}", unicode::convert<std::wstring>(g_startInfo.BootLogPath));
             logging::E("Error: {} / {}", errno, e.what());
         }
     }
@@ -167,27 +274,28 @@ HRESULT WINAPI InitializeImpl(LPVOID lpParam, HANDLE hMainThreadContinue) {
         logging::E("Couldn't parse input JSON: {}", jsonParseError);
 
     if (attemptFallbackLog) {
-        std::wstring logFilePath(PATHCCH_MAX_CCH + 1, L'\0');
-        logFilePath.resize(GetTempPathW(static_cast<DWORD>(logFilePath.size()), &logFilePath[0]));
-        if (logFilePath.empty()) {
-            logFilePath.resize(PATHCCH_MAX_CCH + 1);
-            logFilePath.resize(GetCurrentDirectoryW(static_cast<DWORD>(logFilePath.size()), &logFilePath[0]));
+        std::wstring fallbackLogPath(PATHCCH_MAX_CCH + 1, L'\0');
+        fallbackLogPath.resize(GetTempPathW(static_cast<DWORD>(fallbackLogPath.size()), &fallbackLogPath[0]));
+        if (fallbackLogPath.empty()) {
+            fallbackLogPath.resize(PATHCCH_MAX_CCH + 1);
+            fallbackLogPath.resize(GetCurrentDirectoryW(static_cast<DWORD>(fallbackLogPath.size()), &fallbackLogPath[0]));
         }
-        if (!logFilePath.empty() && logFilePath.back() != '/' && logFilePath.back() != '\\')
-            logFilePath += L"\\";
+        if (!fallbackLogPath.empty() && fallbackLogPath.back() != '/' && fallbackLogPath.back() != '\\')
+            fallbackLogPath += L"\\";
         SYSTEMTIME st;
         GetLocalTime(&st);
-        logFilePath += std::format(L"Dalamud.Boot.{:04}{:02}{:02}.{:02}{:02}{:02}.{:03}.{}.log", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds, GetCurrentProcessId());
+        fallbackLogPath += std::format(L"Dalamud.Boot.{:04}{:02}{:02}.{:02}{:02}{:02}.{:03}.{}.log", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds, GetCurrentProcessId());
 
         try {
-            logging::start_file_logging(logFilePath, !g_startInfo.BootShowConsole);
-            logging::I("Logging to fallback log file: {}", logFilePath);
+            logging::start_file_logging(fallbackLogPath, !g_startInfo.BootShowConsole);
+            resolvedLogPath = fallbackLogPath;
+            logging::I("Logging to fallback log file: {}", fallbackLogPath);
 
         } catch (const std::exception& e) {
             if (!g_startInfo.BootShowConsole && !g_startInfo.BootDisableFallbackConsole)
                 ConsoleSetup(L"Dalamud Boot - Fallback Console");
 
-            logging::E("Couldn't open fallback log file: {}", logFilePath);
+            logging::E("Couldn't open fallback log file: {}", fallbackLogPath);
             logging::E("Error: {} / {}", errno, e.what());
         }
     }
@@ -209,6 +317,7 @@ HRESULT WINAPI InitializeImpl(LPVOID lpParam, HANDLE hMainThreadContinue) {
     if ((g_startInfo.BootWaitMessageBox & DalamudStartInfo::WaitMessageboxFlags::BeforeInitialize) != DalamudStartInfo::WaitMessageboxFlags::None)
         MessageBoxW(nullptr, L"Press OK to continue (BeforeInitialize)", L"Dalamud Boot", MB_OK);
 
+    PrintCpuGpuInfo();
     CheckMsvcrtVersion();
 
     if (g_startInfo.BootDebugDirectX) {
@@ -314,7 +423,7 @@ HRESULT WINAPI InitializeImpl(LPVOID lpParam, HANDLE hMainThreadContinue) {
     if (FAILED(result))
         return result;
 
-    using custom_component_entry_point_fn = LPVOID (CORECLR_DELEGATE_CALLTYPE*)(LPVOID, HANDLE);
+    using custom_component_entry_point_fn = void (CORECLR_DELEGATE_CALLTYPE*)(LPVOID, HANDLE);
     const auto entrypoint_fn = reinterpret_cast<custom_component_entry_point_fn>(entrypoint_vfn);
 
     // ============================== VEH ======================================== //
@@ -323,7 +432,7 @@ HRESULT WINAPI InitializeImpl(LPVOID lpParam, HANDLE hMainThreadContinue) {
     if (g_startInfo.UnhandledException == DalamudStartInfo::UnhandledExceptionHandlingMode::None) {
         logging::W("=> Exception handlers are disabled from DalamudStartInfo.");
     } else if (g_startInfo.BootVehEnabled) {
-        if (veh::add_handler(g_startInfo.BootVehFull, g_startInfo.WorkingDirectory))
+        if (veh::add_handler(g_startInfo.BootVehFull, g_startInfo.WorkingDirectory, resolvedLogPath, g_startInfo.BootShowConsole))
             logging::I("=> Done!");
         else
             logging::I("=> Failed!");
@@ -385,9 +494,8 @@ HRESULT WINAPI InitializeImpl(LPVOID lpParam, HANDLE hMainThreadContinue) {
     // utils::wait_for_game_window();
 
     logging::I("Initializing Dalamud...");
-    const LPVOID managed_stacktrace_fun = entrypoint_fn(lpParam, hMainThreadContinue);
-    veh::set_managed_stacktrace_fun(managed_stacktrace_fun);
-    logging::I("Done! (managed_stacktrace_fun={})", managed_stacktrace_fun);
+    entrypoint_fn(lpParam, hMainThreadContinue);
+    logging::I("Done!");
 
     return S_OK;
 }

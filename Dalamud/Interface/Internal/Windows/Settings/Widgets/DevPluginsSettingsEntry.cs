@@ -23,18 +23,24 @@ namespace Dalamud.Interface.Internal.Windows.Settings.Widgets;
 [SuppressMessage("StyleCop.CSharp.DocumentationRules", "SA1600:Elements should be documented", Justification = "Internals")]
 internal sealed class DevPluginsSettingsEntry : SettingsEntry
 {
+    private readonly FileDialogManager fileDialogManager = new();
+    private readonly Func<bool>? checkVisibility;
+
     private List<DevPluginLocationSettings> devPluginLocations = [];
     private bool devPluginLocationsChanged;
     private string devPluginTempLocation = string.Empty;
     private string devPluginLocationAddError = string.Empty;
-    private FileDialogManager fileDialogManager = new();
+    private bool hadDevPlugins;
 
-    public DevPluginsSettingsEntry()
+    public DevPluginsSettingsEntry(Func<bool>? visibility = null)
     {
         this.Name = LazyLoc.Localize("DalamudSettingsDevPluginLocation", "Dev Plugin Locations");
+        this.checkVisibility = visibility;
     }
 
-    public override bool IsVisible => Service<DalamudConfiguration>.Get().DevMode == true;
+    public override bool IsVisible => this.IsDevModeEnabled || this.hadDevPlugins;
+
+    private bool IsDevModeEnabled => this.checkVisibility?.Invoke() ?? true;
 
     public override void OnClose()
     {
@@ -47,11 +53,32 @@ internal sealed class DevPluginsSettingsEntry : SettingsEntry
         this.devPluginLocations =
             [.. Service<DalamudConfiguration>.Get().DevPluginLoadLocations.Select(x => x.Clone())];
         this.devPluginLocationsChanged = false;
+        if (this.devPluginLocations.Count > 0)
+            this.hadDevPlugins = true;
     }
 
     public override void Save()
     {
-        Service<DalamudConfiguration>.Get().DevPluginLoadLocations = [.. this.devPluginLocations.Select(x => x.Clone())];
+        var config = Service<DalamudConfiguration>.Get();
+
+        config.DevPluginLoadLocations.RemoveAll(existing =>
+                                                    this.devPluginLocations.All(loc => loc.Path != existing.Path));
+
+        foreach (var pendingLocation in this.devPluginLocations)
+        {
+            var existing = config.DevPluginLoadLocations
+                                 .FirstOrDefault(x => x.Path == pendingLocation.Path);
+
+            if (existing != null)
+            {
+                existing.IsEnabled = pendingLocation.IsEnabled;
+                existing.Nickname = pendingLocation.Nickname;
+            }
+            else
+            {
+                config.DevPluginLoadLocations.Add(pendingLocation);
+            }
+        }
 
         if (this.devPluginLocationsChanged)
         {
@@ -63,6 +90,17 @@ internal sealed class DevPluginsSettingsEntry : SettingsEntry
     public override void Draw()
     {
         using var id = ImRaii.PushId("devPluginLocation"u8);
+
+        if (!this.IsDevModeEnabled)
+        {
+            ImGui.TextColoredWrapped(
+                ImGuiColors.AttentionForeground,
+                LazyLoc.Localize(
+                    "DalamudSettingDevModeDisabledWithDevPlugins",
+                    "Developer Mode is disabled, but dev plugins were loaded during this session.\n" +
+                    "They will stay loaded, but will not show in the installer next time the game is restarted."));
+            return;
+        }
 
         ImGui.Text(this.Name);
 
@@ -95,17 +133,20 @@ internal sealed class DevPluginsSettingsEntry : SettingsEntry
 
         ImGuiHelpers.ScaledDummy(5);
 
-        ImGui.Columns(4);
+        ImGui.Columns(5);
         ImGui.SetColumnWidth(0, 18 + (5 * ImGuiHelpers.GlobalScale));
-        ImGui.SetColumnWidth(1, ImGui.GetWindowContentRegionMax().X - ImGui.GetWindowContentRegionMin().X - (18 + 16 + 14) - ((5 + 45 + 26) * ImGuiHelpers.GlobalScale));
-        ImGui.SetColumnWidth(2, 16 + (45 * ImGuiHelpers.GlobalScale));
-        ImGui.SetColumnWidth(3, 14 + (26 * ImGuiHelpers.GlobalScale));
+        ImGui.SetColumnWidth(1, ImGui.GetWindowContentRegionMax().X - ImGui.GetWindowContentRegionMin().X - (18 + 16 + 14 + 14) - ((5 + 45 + 26 + 120) * ImGuiHelpers.GlobalScale));
+        ImGui.SetColumnWidth(2, 16 + (120 * ImGuiHelpers.GlobalScale));
+        ImGui.SetColumnWidth(3, 16 + (45 * ImGuiHelpers.GlobalScale));
+        ImGui.SetColumnWidth(4, 14 + (26 * ImGuiHelpers.GlobalScale));
 
         ImGui.Separator();
 
         ImGui.Text("#"u8);
         ImGui.NextColumn();
         ImGui.Text("Path"u8);
+        ImGui.NextColumn();
+        ImGui.Text("Nickname"u8);
         ImGui.NextColumn();
         ImGui.Text("Enabled"u8);
         ImGui.NextColumn();
@@ -155,6 +196,18 @@ internal sealed class DevPluginsSettingsEntry : SettingsEntry
 
             ImGui.NextColumn();
 
+            ImGui.SetNextItemWidth(-1);
+            var nickname = devPluginLocationSetting.Nickname ?? string.Empty;
+            if (ImGui.InputTextWithHint("##devPluginNickname", "Optional...", ref nickname, 64))
+            {
+                devPluginLocationSetting.Nickname = string.IsNullOrEmpty(nickname) ? null : nickname;
+            }
+
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip(Loc.Localize("DalamudDevPluginNicknameHint", "Optional nickname shown next to the plugin name in the plugin list."));
+
+            ImGui.NextColumn();
+
             ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (ImGui.GetColumnWidth() / 2) - 7 - (12 * ImGuiHelpers.GlobalScale));
             ImGui.Checkbox("##devPluginLocationCheck"u8, ref isEnabled);
             ImGui.NextColumn();
@@ -185,6 +238,8 @@ internal sealed class DevPluginsSettingsEntry : SettingsEntry
         ImGui.NextColumn();
         ImGui.SetNextItemWidth(-1);
         ImGui.InputText("##devPluginLocationInput"u8, ref this.devPluginTempLocation, 300);
+        ImGui.NextColumn();
+        // Nickname
         ImGui.NextColumn();
         // Enabled button
         ImGui.NextColumn();
@@ -235,6 +290,7 @@ internal sealed class DevPluginsSettingsEntry : SettingsEntry
                     IsEnabled = true,
                 });
             this.devPluginLocationsChanged = true;
+            this.hadDevPlugins = true;
             this.devPluginTempLocation = string.Empty;
         }
 
