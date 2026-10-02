@@ -14,7 +14,10 @@ trap {
 
 $repoRoot = Split-Path $MyInvocation.MyCommand.Path -Parent
 $releaseDir = Join-Path $repoRoot "bin\Release"
-$hashScriptPath = Join-Path $repoRoot "CreateHashList.ps1"
+$hashScriptPath = Join-Path $repoRoot "tools\create_hashlist.ps1"
+if (-not (Test-Path $hashScriptPath -PathType Leaf)) {
+    $hashScriptPath = Join-Path $repoRoot "CreateHashList.ps1"
+}
 $packDir = Join-Path $repoRoot "pack"
 $zipPath = Join-Path $packDir "Release.zip"
 $releaseHashPath = Join-Path $packDir "hashes.json.hash"

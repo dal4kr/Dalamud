@@ -16,6 +16,27 @@ Write-Output "PowerShell $($PSVersionTable.PSEdition) version $($PSVersionTable.
 Set-StrictMode -Version 2.0; $ErrorActionPreference = "Stop"; $ConfirmPreference = "None"; trap { Write-Error $_ -ErrorAction Continue; exit 1 }
 $repoRoot = Split-Path $MyInvocation.MyCommand.Path -Parent
 
+# Upstream replaced Nuke with a CMake + dotnet build.cmd in 15.0.3.6.
+$useCMake = Test-Path (Join-Path $repoRoot "CMakeLists.txt") -PathType Leaf
+$buildScriptPath = Join-Path $repoRoot $(if ($useCMake) { "build.cmd" } else { "build.ps1" })
+if (-not (Test-Path $buildScriptPath -PathType Leaf)) {
+    throw "Build entry point not found: $buildScriptPath"
+}
+
+# Validate before building Lumina or changing Directory.Packages.props.
+if ($useCMake) {
+    $configuration = "Debug"
+    $arguments = @($BuildArguments | Where-Object { $null -ne $_ })
+    if ($arguments.Count -eq 1 -and $arguments[0] -match '^(Debug|Release)$') {
+        $configuration = $arguments[0]
+    } elseif ($arguments.Count -eq 2 -and $arguments[0] -in @('--configuration', '-configuration', '-c') -and $arguments[1] -match '^(Debug|Release)$') {
+        $configuration = $arguments[1]
+    } elseif ($arguments.Count -ne 0) {
+        throw "CMake builds accept only Debug or Release (also --configuration <value> or -c <value>). Nuke target/options are no longer supported."
+    }
+    $configuration = if ($configuration -ieq "Release") { "Release" } else { "Debug" }
+}
+
 ###########################################################################
 # CONFIGURATION
 ###########################################################################
@@ -385,5 +406,15 @@ if ($null -ne $luminaVersionResolution.ReusablePackage) {
 Write-Host "Using local Lumina package version for solution: $effectiveLuminaPackageVersion"
 Set-RootLuminaPackageVersion -luminaPackageVersion $effectiveLuminaPackageVersion
 
-# --configuration [Debug|Release], default: Debug
-ExecSafe { & (Join-Path $repoRoot "build.ps1") @BuildArguments }
+if ($useCMake) {
+    # build.cmd invokes dotnet by name, including when we bootstrapped the SDK.
+    $originalPath = $env:PATH
+    try {
+        $env:PATH = (Split-Path $env:DOTNET_EXE -Parent) + [IO.Path]::PathSeparator + $originalPath
+        ExecSafe { & $buildScriptPath $configuration }
+    } finally {
+        $env:PATH = $originalPath
+    }
+} else {
+    ExecSafe { & $buildScriptPath @BuildArguments }
+}

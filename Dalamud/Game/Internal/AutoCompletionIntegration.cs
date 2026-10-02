@@ -12,6 +12,7 @@ using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.Completion;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using FFXIVClientStructs.Interop;
 
 using Iced.Intel;
 
@@ -236,7 +237,7 @@ internal sealed unsafe class AutoCompletionIntegration : IInternalDisposableServ
         if (addon == null)
             addon = RaptureAtkUnitManager.Instance()->GetAddonByNode((AtkResNode*)component->OwnerNode);
 
-        return addon != null && addon->NameString == "ChatLog";
+        return addon != null && addon->Name.BeforeNull().SequenceEqual("ChatLog"u8);
     }
 
     private bool HasDalamudCategory()
