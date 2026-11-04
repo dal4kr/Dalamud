@@ -91,6 +91,7 @@ public struct GameFontStyle
         GameFontFamilyAndSize.Krnaxis120 => GameFontFamily.Axis,
         GameFontFamilyAndSize.Krnaxis140 => GameFontFamily.Axis,
         GameFontFamilyAndSize.Krnaxis180 => GameFontFamily.Axis,
+        GameFontFamilyAndSize.Krnaxis360 => GameFontFamily.Axis,
         GameFontFamilyAndSize.Jupiter16 => GameFontFamily.Jupiter,
         GameFontFamilyAndSize.Jupiter20 => GameFontFamily.Jupiter,
         GameFontFamilyAndSize.Jupiter23 => GameFontFamily.Jupiter,
@@ -140,6 +141,7 @@ public struct GameFontStyle
         GameFontFamilyAndSize.Krnaxis120 => 12,
         GameFontFamilyAndSize.Krnaxis140 => 14,
         GameFontFamilyAndSize.Krnaxis180 => 18,
+        GameFontFamilyAndSize.Krnaxis360 => 36,
         GameFontFamilyAndSize.Jupiter16 => 16,
         GameFontFamilyAndSize.Jupiter20 => 20,
         GameFontFamilyAndSize.Jupiter23 => 23,
@@ -201,7 +203,7 @@ public struct GameFontStyle
                 <= ((int)((12f * 4f / 3f) + 0.5f) * 3f / 4f) + 0.001f => GameFontFamilyAndSize.Krnaxis120,
                 <= ((int)((14f * 4f / 3f) + 0.5f) * 3f / 4f) + 0.001f => GameFontFamilyAndSize.Krnaxis140,
                 <= ((int)((18f * 4f / 3f) + 0.5f) * 3f / 4f) + 0.001f => GameFontFamilyAndSize.Krnaxis180,
-                _ => GameFontFamilyAndSize.Axis36,
+                _ => GameFontFamilyAndSize.Krnaxis360,
             },
             GameFontFamily.Jupiter => size switch
             {

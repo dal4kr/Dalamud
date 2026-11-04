@@ -217,4 +217,12 @@ public enum GameFontFamilyAndSize
     /// </summary>
     [GameFontFamilyAndSize("common/font/TrumpGothic_68.fdt", "common/font/font{0}.tex", -3)]
     TrumpGothic68,
+
+    /// <summary>
+    /// KR AXIS (36pt)
+    ///
+    /// Contains Korean characters in addition to Latin characters. Used in game for the whole UI.
+    /// </summary>
+    [GameFontFamilyAndSize("common/font/KrnAXIS_360.fdt", "common/font/font_krn_{0}.tex", -4)]
+    Krnaxis360,
 }
