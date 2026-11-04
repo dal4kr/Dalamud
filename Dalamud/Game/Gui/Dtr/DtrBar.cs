@@ -349,6 +349,10 @@ internal sealed unsafe class DtrBar : IInternalDisposableService, IDtrBar
         var collisionNode = dtr->GetNodeById(17);
         if (collisionNode == null) return;
 
+        // AddonLifecycle cannot observe a DTR that was initialized before injection.
+        // Refresh its layout here as well, so entries do not depend on receiving addon events.
+        this.FixCollision(dtr);
+
         // We haven't calculated the native size yet, so we don't know where to start positioning.
         if (float.IsNaN(this.entryStartPos)) return;
 
@@ -432,12 +436,17 @@ internal sealed unsafe class DtrBar : IInternalDisposableService, IDtrBar
         }
 
         this.entriesLock.ExitUpgradeableReadLock();
+
+        // Entry widths and visibility may have changed during this update.
+        this.FixCollision(dtr);
     }
 
     private void FixCollision(AddonEvent eventType, AddonArgs addonInfo)
+        => this.FixCollision(addonInfo.Addon.Struct);
+
+    private void FixCollision(AtkUnitBase* addon)
     {
-        var addon = addonInfo.Addon.Struct;
-        if (addon->RootNode is null || addon->UldManager.NodeList is null) return;
+        if (addon is null || addon->RootNode is null || addon->UldManager.NodeList is null) return;
 
         float minX = addon->RootNode->Width;
         var additionalWidth = 0;
